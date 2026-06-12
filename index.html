@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reimbursement Review</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+<style>
+:root{--ink:#16202A;--slate:#5C6B79;--faint:#8A97A3;--line:#E3E7EB;--hair:#EDF0F2;--surface:#fff;--base:#F3F5F7;--teal:#0E5A6B;--teal-ink:#0A4450;--green:#1F7A52;--green-bg:#EAF5EF;--amber:#9A6700;--amber-bg:#FBF3E2;--red:#B42318;--red-bg:#FBEEEC;}
+*{box-sizing:border-box}
+body{margin:0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);background:var(--base);-webkit-font-smoothing:antialiased}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1060px;margin:0 auto;padding:24px 20px 90px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:16px;flex-wrap:wrap}
+.brand{font-family:"Newsreader",serif;font-size:27px;font-weight:500;letter-spacing:-.01em}
+.topright{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.roleSw{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.roleSw button{font-family:inherit;font-size:13px;font-weight:600;padding:9px 18px;border:none;background:#fff;color:var(--slate);cursor:pointer;min-width:96px;text-align:center}
+.roleSw button.on{background:var(--ink);color:#fff}
+.who{font-size:11px;color:var(--faint)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-top:16px}
+.card h2{font-family:"Newsreader",serif;font-weight:500;font-size:19px;margin:0 0 4px}
+.lead{color:var(--slate);font-size:13px;margin:0 0 14px;max-width:66ch}
+.tabs{display:flex;gap:2px;margin-bottom:14px}
+.tabs button{font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 13px;border:1px solid var(--line);background:#fff;color:var(--slate);cursor:pointer}
+.tabs button:first-child{border-radius:7px 0 0 7px}.tabs button:last-child{border-radius:0 7px 7px 0}
+.tabs button.on{background:var(--teal);border-color:var(--teal);color:#fff}
+label.fld{display:block;font-size:12px;font-weight:600;color:var(--slate);margin:0 0 5px}
+textarea,input[type=text],input[type=email],input[type=number]{font-family:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:#fff;width:100%}
+textarea{min-height:120px;resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
+.btn{font-family:inherit;font-size:13px;font-weight:600;border-radius:7px;padding:9px 14px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;white-space:nowrap}
+.btn:hover{background:#0c1620}.btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}.btn.ghost:hover{background:var(--hair)}
+.btn.teal{background:var(--teal);border-color:var(--teal)}.btn.teal:hover{background:var(--teal-ink)}
+.btn.green{background:var(--green);border-color:var(--green)}.btn.sm{padding:6px 10px;font-size:12px}.btn:disabled{opacity:.45;cursor:not-allowed}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;padding:8px;border-bottom:1px solid var(--line)}
+td{padding:9px 8px;border-bottom:1px solid var(--hair);vertical-align:top}
+tr.dim td{color:var(--faint)}
+.amt{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ref{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint)}
+.merch{font-weight:500}.sub{color:var(--slate);font-size:12px}
+.chk{width:17px;height:17px;accent-color:var(--teal);cursor:pointer}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;line-height:1.3}
+.tag.green{background:var(--green-bg);color:var(--green)}.tag.amber{background:var(--amber-bg);color:var(--amber)}.tag.red{background:var(--red-bg);color:var(--red)}.tag.slate{background:var(--hair);color:var(--slate)}
+.empty{text-align:center;color:var(--faint);font-size:13px;padding:28px 10px;border:1px dashed var(--line);border-radius:8px}
+.attach{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px;border:1px solid var(--line);border-radius:9px;margin-bottom:10px;background:#FAFBFC}
+.attach.missing{border-left:3px solid var(--amber)}.attach.ok{border-left:3px solid var(--green)}
+.thumb{width:52px;height:52px;border-radius:6px;object-fit:cover;border:1px solid var(--line);background:#fff;cursor:pointer}
+.thumb-pdf{width:52px;height:52px;border-radius:6px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--slate);background:#fff;cursor:pointer}
+.verdict{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:10px}
+.vtop{display:flex;align-items:center;justify-content:space-between;padding:11px 13px}
+.vtop.match{background:var(--green-bg)}.vtop.review{background:var(--amber-bg)}.vtop.flagged{background:var(--red-bg)}
+.stamp{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:13px;letter-spacing:.08em;border:2px solid currentColor;border-radius:6px;padding:3px 9px;transform:rotate(-3deg)}
+.stamp.match{color:var(--green)}.stamp.review{color:var(--amber)}.stamp.flagged{color:var(--red)}
+.vbody{padding:11px 13px;background:#fff;font-size:13px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--hair);border-radius:8px;overflow:hidden;margin-bottom:9px}
+.cmp>div{padding:8px 10px}.cmp .l{border-right:1px solid var(--hair);background:#FAFBFC}
+.cmp-k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.cmp-v{font-family:"IBM Plex Mono",monospace;font-size:13px;margin-top:2px}
+.flagline{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px solid var(--hair)}
+.notebar{display:flex;gap:8px;align-items:flex-start;background:#FAFBFC;border:1px solid var(--line);border-left:3px solid var(--teal);border-radius:7px;padding:10px 12px;font-size:12.5px;color:var(--slate);margin-top:14px}
+.notebar b{color:var(--ink)}
+.poltag{display:inline-flex;align-items:center;gap:6px;background:var(--hair);border-radius:20px;padding:4px 6px 4px 11px;font-size:12px;margin:0 6px 6px 0}
+.poltag button{border:none;background:#fff;border-radius:50%;width:18px;height:18px;cursor:pointer;color:var(--slate);font-weight:700;line-height:1}
+.foot{font-size:12px;color:var(--faint);margin-top:8px}.hide{display:none!important}
+.login{max-width:380px;margin:90px auto;text-align:center}
+.login .card{text-align:left}
+@media(max-width:620px){.cmp{grid-template-columns:1fr}.cmp .l{border-right:none;border-bottom:1px solid var(--hair)}}
+</style>
+</head>
+<body>
+
+<!-- ===== CONFIG: paste your Supabase project values here ===== -->
+<script>
+  const SUPABASE_URL  = "https://nrveyjgdsnqsyliwivil.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ydmV5amdkc25xc3lsaXdpdmlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMjY4MDIsImV4cCI6MjA5NjgwMjgwMn0.7m9VeLcIsnRufQtzHdAjnKF5XjekQrzGBhkY4-PPzoE";
+  const AI_FUNCTION_URL = SUPABASE_URL + "/functions/v1/ai";
+</script>
+
+<div id="app"></div>
+
+<script>
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const DEFAULT_POLICY = ["Alcohol","Tobacco / vape","Gift cards","Cash back / ATM","Lottery","Late fees & interest"];
+const S = {
+  user:null, isReviewer:false, role:"submit", intakeTab:"pdf",
+  txs:[], claimed:{}, receipts:{}, submitterName:"",
+  inbox:[], openSub:null, verifs:{},
+  ledger:[], paid:[], policy:[...DEFAULT_POLICY]
+};
+
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=n=>"$"+Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+const uid=()=>Math.random().toString(36).slice(2,10);
+const MONEY=/\d{1,3}(?:,\d{3})*\.\d{2}/g,REF=/\b(S\d{15,}|P0\d{11,})\b/,CARD=/Card\s+(\d{4})/i;
+function parseLine(raw){const line=raw.replace(/\s+/g," ").trim();if(!line)return null;const dm=line.match(/^(\d{1,2}\/\d{1,2})\b/);if(!dm)return null;const moneys=line.match(MONEY);if(!moneys)return null;const amount=parseFloat(moneys[moneys.length-1].replace(/,/g,""));const ref=(line.match(REF)||[])[1]||"",card=(line.match(CARD)||[])[1]||"";const credit=/(Deposit|Online Transfer From|WT Fed|Purchase Return|Refund)/i.test(line);let m=line.replace(/^\d{1,2}\/\d{1,2}\s+/,"").replace(/(Purchase authorized on|Recurring Payment authorized on)\s+\d{1,2}\/\d{1,2}\s+/i,"").replace(REF,"").replace(/Card\s+\d{4}/i,"").replace(MONEY,"").replace(/\s{2,}/g," ").trim().replace(/\s+(CA|TX|WA|NJ|IL|DE|NY|CO)\s*$/,"").trim();return {id:uid(),date:dm[1],amount,ref,card,type:credit?"credit":"debit",merchant:(m||"(unlabeled)").slice(0,60)};}
+function parseStatementText(text){const lines=text.split(/\r?\n/),joined=[];for(const ln of lines){if(/^\s*\d{1,2}\/\d{1,2}\b/.test(ln)||joined.length===0)joined.push(ln);else joined[joined.length-1]+=" "+ln;}return joined.map(parseLine).filter(Boolean).filter(t=>t.type==="debit");}
+function dedupKey(t){return t.ref?"ref:"+t.ref:"h:"+[t.date,Number(t.amount).toFixed(2),(t.merchant||"").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,14)].join("|");}
+function readB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("read"));r.readAsDataURL(file);});}
+function shrinkImage(file){return new Promise(async res=>{if(file.type==="application/pdf"){res({media:"application/pdf",data:await readB64(file),name:file.name});return;}const url=URL.createObjectURL(file);const img=new Image();img.onload=()=>{const max=1400,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=img.width*sc;c.height=img.height*sc;c.getContext("2d").drawImage(img,0,0,c.width,c.height);res({media:"image/jpeg",data:c.toDataURL("image/jpeg",0.72).split(",")[1],name:file.name});URL.revokeObjectURL(url);};img.onerror=async()=>res({media:file.type||"image/jpeg",data:await readB64(file),name:file.name});img.src=url;});}
+
+/* ---------- AI via Edge Function ---------- */
+async function callAI(body){
+  const {data:{session}}=await sb.auth.getSession();
+  const r=await fetch(AI_FUNCTION_URL,{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token,"apikey":SUPABASE_ANON},body:JSON.stringify(body)});
+  const t=await r.text(); return JSON.parse(t);
+}
+
+/* ---------- data layer (Supabase) ---------- */
+function mapItem(r){return {txId:r.id,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref||"",card:r.card||"",note:r.note||"",decision:r.decision||null,verification:r.verification||null,receipt:r.receipt_data?{media:r.receipt_media,data:r.receipt_data}:null};}
+async function dbLedger(){const{data}=await sb.from("ledger").select("*");return(data||[]).map(r=>({key:r.dedup_key,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref,approvedAt:(r.approved_at||"").slice(0,10),from:r.approved_by||""}));}
+async function dbInbox(){const{data}=await sb.from("submissions").select("id,submitter,created_at,status,items(*)").order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,at:s.created_at,status:s.status,items:(s.items||[]).map(mapItem)}));}
+async function dbSubmit(name,items){
+  const{data:sub,error}=await sb.from("submissions").insert({submitter:name,submitted_by:S.user.id}).select().single();
+  if(error)throw error;
+  const rows=items.map(it=>({submission_id:sub.id,tx_date:it.date,merchant:it.merchant,amount:it.amount,ref:it.ref,card:it.card,note:it.note||"",dedup_key:dedupKey(it),receipt_data:it.receipt?it.receipt.data:null,receipt_media:it.receipt?it.receipt.media:null}));
+  const{error:e2}=await sb.from("items").insert(rows);
+  if(e2)throw e2;
+}
+async function dbSaveVerification(itemId,v){await sb.from("items").update({verification:v}).eq("id",itemId);}
+async function dbDecide(item,sub,d){
+  await sb.from("items").update({decision:d,decided_at:new Date().toISOString(),decided_by:S.user.email}).eq("id",item.txId);
+  if(d==="approved"){
+    await sb.from("ledger").upsert({dedup_key:dedupKey(item),tx_date:item.date,merchant:item.merchant,amount:item.amount,ref:item.ref,approved_by:S.user.email,submission_id:sub.id},{onConflict:"dedup_key",ignoreDuplicates:true});
+  }
+  const all=sub.items.every(i=>(i.txId===item.txId?d:i.decision));
+  await sb.from("submissions").update({status:all?"reviewed":"open"}).eq("id",sub.id);
+}
+
+/* ============================ AUTH ============================ */
+async function boot(){
+  if(SUPABASE_URL.includes("YOUR-PROJECT")){ $("app").innerHTML=`<div class="login"><div class="brand" style="margin-bottom:16px">Reimbursement Review</div><div class="card"><h2>Setup needed</h2><p class="lead">Open this file and paste your Supabase URL and anon key into the CONFIG block near the top, then reload. See README for the full steps.</p></div></div>`; return; }
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){ await onSignedIn(session.user); } else { renderLogin(); }
+  sb.auth.onAuthStateChange((_e,sess)=>{ if(sess&&!S.user){ onSignedIn(sess.user); } });
+}
+function renderLogin(){
+  $("app").innerHTML=`<div class="login">
+    <div class="brand" style="margin-bottom:18px">Reimbursement Review</div>
+    <div class="card">
+      <h2>Sign in</h2>
+      <p class="lead">Enter your email and we'll send a one-tap sign-in link.</p>
+      <label class="fld">Email</label>
+      <input type="email" id="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')sendLink()">
+      <div class="btnrow"><button class="btn teal" onclick="sendLink()">Send link</button></div>
+      <div class="foot" id="loginMsg"></div>
+    </div></div>`;
+}
+async function sendLink(){
+  const email=($("email").value||"").trim(); const m=$("loginMsg"); if(!email){m.textContent="Enter your email.";return;}
+  m.textContent="Sending…";
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href.split("#")[0]}});
+  m.textContent=error?("Couldn't send: "+error.message):"Check your email for the sign-in link.";
+}
+async function signOut(){ await sb.auth.signOut(); S.user=null; renderLogin(); }
+async function onSignedIn(user){
+  S.user=user; S.submitterName=(user.email||"").split("@")[0];
+  const {data}=await sb.from("reviewers").select("email").ilike("email",user.email).maybeSingle();
+  S.isReviewer=!!data;
+  S.ledger=await dbLedger(); S.paid=S.ledger.map(r=>({key:r.key}));
+  renderApp();
+}
+
+/* ============================ SHELL ============================ */
+function renderApp(){
+  $("app").innerHTML=`<div class="wrap">
+    <div class="top">
+      <div class="brand">Reimbursement Review</div>
+      <div class="topright">
+        ${S.isReviewer?`<div class="roleSw">
+          <button id="rb-submit" class="${S.role==="submit"?"on":""}" onclick="setRole('submit')">Submit</button>
+          <button id="rb-review" class="${S.role==="review"?"on":""}" onclick="setRole('review')">Review</button>
+        </div>`:""}
+        <div class="who">${esc(S.user.email)} · <a href="#" onclick="signOut();return false" style="color:var(--teal)">sign out</a></div>
+      </div>
+    </div>
+    <div id="submitView" class="${S.role==="submit"?"":"hide"}"></div>
+    <div id="reviewView" class="${S.role==="review"?"":"hide"}"></div>
+  </div>`;
+  renderSubmit(); if(S.isReviewer) renderReviewHome();
+}
+function setRole(r){
+  S.role=r;
+  if($("rb-submit"))$("rb-submit").classList.toggle("on",r==="submit");
+  if($("rb-review"))$("rb-review").classList.toggle("on",r==="review");
+  $("submitView").classList.toggle("hide",r!=="submit");
+  $("reviewView").classList.toggle("hide",r!=="review");
+  if(r==="review") refreshInbox(); if(r==="submit") refreshPaid();
+}
+
+/* ============================ SUBMIT ============================ */
+function renderSubmit(){
+  const v=$("submitView"); if(!v) return;
+  const claimedTxs=S.txs.filter(t=>S.claimed[t.id]);
+  const paidSet=new Set((S.paid||[]).map(p=>p.key));
+  v.innerHTML=`
+  <div class="card"><h2>1 · Add statement</h2>
+    <p class="lead">Upload the month's statement (PDF), drop in charge screenshots, or paste the lines. Every row stays editable.</p>
+    <div class="tabs">
+      <button class="${S.intakeTab==="pdf"?"on":""}" onclick="setTab('pdf')">PDF statement</button>
+      <button class="${S.intakeTab==="img"?"on":""}" onclick="setTab('img')">Charge screenshots</button>
+      <button class="${S.intakeTab==="paste"?"on":""}" onclick="setTab('paste')">Paste text</button>
+    </div><div id="intakeBody"></div>
+  </div>
+  <div class="card"><h2>2 · Pick charges</h2><p class="lead">Check the ones you're claiming.</p>
+    ${S.txs.length===0?'<div class="empty">No charges loaded yet.</div>':`
+    <table><thead><tr><th style="width:28px"></th><th style="width:48px">Date</th><th>Merchant</th><th>Reference</th><th class="amt">Amount</th><th></th></tr></thead>
+    <tbody>${S.txs.map(t=>{const seen=paidSet.has(dedupKey(t));return `<tr class="${seen?'dim':''}">
+      <td><input type="checkbox" class="chk" ${S.claimed[t.id]?"checked":""} ${seen?"disabled":""} onchange="toggleClaim('${t.id}')"></td>
+      <td class="mono">${esc(t.date)}</td><td class="merch">${esc(t.merchant)}</td><td class="ref">${esc(t.ref)||"—"}</td>
+      <td class="amt">${fmt(t.amount)}</td><td>${seen?'<span class="tag slate">already reimbursed</span>':''}</td></tr>`;}).join("")}</tbody></table>`}
+  </div>
+  <div class="card"><h2>3 · Add receipts</h2><p class="lead">One receipt per charge. If a receipt is gone, leave a quick note instead.</p>
+    ${claimedTxs.length===0?'<div class="empty">Check at least one charge above.</div>':claimedTxs.map(t=>{const r=S.receipts[t.id];return `<div class="attach ${r&&r.data?'ok':'missing'}">
+      <div style="min-width:0"><div class="merch">${esc(t.merchant)}</div><div class="sub mono">${esc(t.date)} · ${fmt(t.amount)}${t.ref?" · "+esc(t.ref):""}</div>
+      <input type="text" placeholder="Note (optional)" value="${esc(r&&r.note||"")}" oninput="setNote('${t.id}',this.value)" style="margin-top:7px;max-width:340px"></div>
+      <div style="display:flex;gap:9px;align-items:center">${r&&r.data?(r.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${r.media};base64,${r.data}">`):""}
+      <label class="btn ghost sm" style="cursor:pointer">${r&&r.data?"Replace":"Attach"}<input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])"></label></div></div>`;}).join("")}
+  </div>
+  <div class="card"><h2>4 · Submit</h2><p class="lead">Sends each charge with its receipt to the reviewer.</p>
+    <div class="btnrow"><button class="btn teal" id="subBtn" onclick="doSubmit()" ${claimedTxs.length===0?"disabled":""}>Submit ${claimedTxs.length} charge${claimedTxs.length===1?"":"s"}</button>
+    <button class="btn ghost sm" onclick="loadSample()">Load sample</button></div>
+    <div class="foot" id="submitMsg"></div>
+  </div>`;
+  renderIntake();
+}
+function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="pdf"){b.innerHTML=`<label class="fld">Statement PDF</label><label class="btn ghost" style="cursor:pointer">Choose PDF<input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"></label><span id="pdfMsg" class="foot" style="margin-left:10px"></span>`;}else if(S.intakeTab==="img"){b.innerHTML=`<label class="fld">Charge screenshots</label><label class="btn ghost" style="cursor:pointer">Choose images<input type="file" accept="image/*" multiple style="display:none" onchange="onShots(this.files)"></label><span id="imgMsg" class="foot" style="margin-left:10px"></span>`;}else{b.innerHTML=`<label class="fld">Paste statement lines</label><textarea id="pasteBox" placeholder="4/8 Purchase authorized on 04/06 Shell Oil ... S35609... Card 8464 25.39"></textarea><div class="btnrow"><button class="btn teal sm" onclick="onPaste()">Parse</button></div>`;}}
+function setTab(t){S.intakeTab=t;renderSubmit();}
+async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found — try paste.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF. Try paste.";}}
+async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots. Use the paste tab.";}}
+function onPaste(){const t=($("pasteBox").value||"").trim();if(!t)return;S.txs=parseStatementText(t);S.claimed={};S.receipts={};renderSubmit();}
+function loadSample(){S.txs=parseStatementText(`4/8 Purchase authorized on 04/07 Ralphs #0739 Dana Point CA S346098053092951 Card 8464 11.65\n4/10 Purchase authorized on 04/09 Ic* Bevmo Via Inst Bevmo.Com CA S356100117285286 Card 8464 15.90\n4/15 Purchase authorized on 04/14 Cvs/Pharmacy #0991 Dana Point CA S356104755255040 Card 8464 17.33`);S.claimed={};S.receipts={};renderSubmit();}
+function toggleClaim(id){S.claimed[id]=!S.claimed[id];renderSubmit();}
+function setNote(id,v){S.receipts[id]=Object.assign({},S.receipts[id]||{},{note:v});}
+async function attachReceipt(id,file){if(!file)return;const sh=await shrinkImage(file);S.receipts[id]=Object.assign({},S.receipts[id]||{},{name:sh.name,media:sh.media,data:sh.data});renderSubmit();}
+async function doSubmit(){
+  const msg=$("submitMsg"); $("subBtn").disabled=true; msg.textContent="Submitting…";
+  const items=S.txs.filter(t=>S.claimed[t.id]).map(t=>{const r=S.receipts[t.id]||{};return {date:t.date,merchant:t.merchant,amount:t.amount,ref:t.ref,card:t.card,note:r.note||"",receipt:r.data?{media:r.media,data:r.data}:null};});
+  try{ await dbSubmit(S.submitterName,items); S.txs=[];S.claimed={};S.receipts={}; renderSubmit(); $("submitMsg").textContent="Submitted — the reviewer will see it shortly."; }
+  catch(e){ msg.textContent="Submit failed: "+(e.message||e); $("subBtn").disabled=false; }
+}
+
+/* ============================ REVIEW ============================ */
+async function refreshInbox(){ S.inbox=await dbInbox(); S.ledger=await dbLedger(); if(S.role==="review"&&!S.openSub) renderReviewHome(); }
+async function refreshPaid(){ S.ledger=await dbLedger(); S.paid=S.ledger.map(r=>({key:r.key})); if(S.role==="submit") renderSubmit(); }
+function renderReviewHome(){
+  const v=$("reviewView"); if(!v) return;
+  if(S.openSub){ renderReviewOne(); return; }
+  const total=S.ledger.reduce((s,r)=>s+r.amount,0);
+  v.innerHTML=`
+  <div class="card"><h2>Submissions</h2>
+    <p class="lead">Every submission, kept on file. New charges are checked against everything already paid.</p>
+    <div class="btnrow" style="margin-top:0"><button class="btn ghost sm" onclick="refreshInbox()">Refresh</button></div>
+    <div style="margin-top:14px">${S.inbox.length===0?'<div class="empty">No submissions yet.</div>':`
+      <table><thead><tr><th>From</th><th>Sent</th><th>Charges</th><th class="amt">Total</th><th>Status</th><th></th></tr></thead><tbody>
+      ${S.inbox.map(s=>{const ap=s.items.filter(i=>i.decision==="approved").length;const done=s.items.length>0&&s.items.every(i=>i.decision);const tag=done?`<span class="tag green">reviewed · ${ap} paid</span>`:(ap?`<span class="tag amber">in progress · ${ap} paid</span>`:`<span class="tag slate">new</span>`);return `<tr>
+        <td class="merch">${esc(s.by)}</td><td class="sub mono">${esc((s.at||"").slice(0,10))}</td><td>${s.items.length}</td>
+        <td class="amt">${fmt(s.items.reduce((a,i)=>a+i.amount,0))}</td><td>${tag}</td>
+        <td><button class="btn sm" onclick="openSub('${s.id}')">${done?"View":"Review"}</button></td></tr>`;}).join("")}</tbody></table>`}</div>
+  </div>
+  <div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
+    <div><h2>Ledger</h2><p class="lead" style="margin:0">Every approved charge. The database refuses to record one twice.</p></div>
+    <button class="btn ghost sm" onclick="exportCsv()" ${S.ledger.length?"":"disabled"}>Export CSV</button></div>
+    <div style="margin-top:14px">${S.ledger.length===0?'<div class="empty">Nothing approved yet.</div>':`
+      <table><thead><tr><th>Approved</th><th>Date</th><th>Merchant</th><th>Reference</th><th class="amt">Amount</th></tr></thead><tbody>
+      ${S.ledger.map(r=>`<tr><td class="mono sub">${esc(r.approvedAt)}</td><td class="mono">${esc(r.date)}</td><td class="merch">${esc(r.merchant)}</td><td class="ref">${esc(r.ref)||"—"}</td><td class="amt">${fmt(r.amount)}</td></tr>`).join("")}
+      <tr><td colspan="4" style="text-align:right;font-weight:600">Total reimbursed</td><td class="amt" style="font-weight:600">${fmt(total)}</td></tr></tbody></table>`}</div>
+  </div>
+  <div class="card"><h2>Flag list</h2><p class="lead">Screened on every receipt. A hit surfaces the line — it doesn't auto-decline.</p>
+    <div style="margin:6px 0 12px">${S.policy.map((p,i)=>`<span class="poltag">${esc(p)}<button onclick="delPol(${i})">×</button></span>`).join("")}</div>
+    <div class="btnrow" style="margin-top:0;max-width:460px"><input type="text" id="polIn" placeholder="e.g. Electronics over $200" style="flex:1"><button class="btn sm" onclick="addPol()">Add</button></div>
+  </div>`;
+}
+function openSub(id){S.openSub=id;renderReviewOne();}
+function backToInbox(){S.openSub=null;renderReviewHome();}
+function renderReviewOne(){
+  const sub=S.inbox.find(s=>s.id===S.openSub); if(!sub){backToInbox();return;}
+  const v=$("reviewView"); const byKey={}; S.ledger.forEach(r=>byKey[r.key]=r);
+  const paidHits=sub.items.filter(i=>byKey[dedupKey(i)]);
+  const sig=i=>(i.merchant||"").toLowerCase().replace(/[^a-z0-9]/g,"")+"|"+Number(i.amount).toFixed(2);
+  const counts={}; sub.items.forEach(i=>counts[sig(i)]=(counts[sig(i)]||0)+1);
+  v.innerHTML=`<div class="card">
+    <div class="btnrow" style="margin-top:0"><button class="btn ghost sm" onclick="backToInbox()">← Back</button><button class="btn teal sm" onclick="checkAll('${sub.id}')">Check all</button></div>
+    <h2 style="margin-top:12px">${esc(sub.by)} · ${sub.items.length} charges · ${fmt(sub.items.reduce((a,i)=>a+i.amount,0))}</h2>
+    <p class="lead">Sent ${esc((sub.at||"").slice(0,16).replace("T"," "))}</p>
+    ${paidHits.length?`<div class="notebar" style="border-left-color:var(--red)"><span>⚠</span><div><b>${paidHits.length} of these ${paidHits.length===1?"charge has":"charges have"} already been paid.</b> Blocked: ${paidHits.map(i=>esc(i.merchant)+" "+fmt(i.amount)+" (paid "+esc(byKey[dedupKey(i)].approvedAt)+")").join("; ")}.</div></div>`:""}
+    ${sub.items.map(it=>{const key=it.txId,ver=S.verifs[key]||it.verification,dec=it.decision,paid=byKey[dedupKey(it)],dup=!!paid,twin=counts[sig(it)]>1;return `<div class="attach ${it.receipt?'ok':'missing'}" style="display:block">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div style="min-width:0"><div class="merch">${esc(it.merchant)} <span class="amt" style="font-weight:600">${fmt(it.amount)}</span></div>
+          <div class="sub mono">${esc(it.date)}${it.ref?" · "+esc(it.ref):""}</div>${it.note?`<div class="sub" style="margin-top:4px">Note: ${esc(it.note)}</div>`:""}
+          <div style="margin-top:6px">${dup?`<span class="tag red">already paid ${esc(paid.approvedAt)}</span> `:''}${twin?'<span class="tag amber">identical amount in batch — separate charge</span> ':''}${!it.receipt?'<span class="tag slate">no receipt</span>':''}</div></div>
+        <div style="display:flex;gap:9px;align-items:center;flex:0 0 auto">${it.receipt?(it.receipt.media==="application/pdf"?`<span class="thumb-pdf" onclick="openReceipt('${key}')">PDF</span>`:`<img class="thumb" src="data:${it.receipt.media};base64,${it.receipt.data}" onclick="openReceipt('${key}')">`):""}
+        <button class="btn ghost sm" onclick="checkOne('${sub.id}','${key}')" ${it.receipt?"":"disabled"}>${ver&&ver.__busy?"Checking…":"Check"}</button></div></div>
+      ${ver&&!ver.__busy&&!ver.__err?verdictHtml(it,ver):""}${ver&&ver.__err?`<div class="notebar" style="border-left-color:var(--amber)"><span>!</span><div>${esc(ver.__err)}</div></div>`:""}
+      <div class="btnrow">${dec?`<span class="tag ${dec==="approved"?"green":"red"}">${dec}</span>`:`<button class="btn green sm" onclick="decide('${sub.id}','${key}','approved')" ${dup?"disabled":""}>Approve → ledger</button><button class="btn ghost sm" onclick="decide('${sub.id}','${key}','declined')">Decline</button>`}</div>
+    </div>`;}).join("")}
+  </div>`;
+}
+function verdictHtml(it,v){const cls=v.verdict==="match"?"match":v.verdict==="flagged"?"flagged":"review";const label=v.verdict==="match"?"RECONCILED":v.verdict==="flagged"?"FLAGGED":"REVIEW";const mk=s=>s==="yes"?"✓":s==="no"?"✗":"?";const m=v.match||{};return `<div class="verdict"><div class="vtop ${cls}"><div style="font-size:13px;font-weight:600">${esc(v.merchant_on_receipt||"Receipt")} · ${v.receipt_total!=null?fmt(v.receipt_total):"total unread"}</div><div class="stamp ${cls}">${label}</div></div><div class="vbody"><div class="cmp"><div class="l"><div class="cmp-k">Charge</div><div class="cmp-v">${esc(it.merchant)}<br>${fmt(it.amount)} · ${esc(it.date)}</div></div><div><div class="cmp-k">Receipt</div><div class="cmp-v">${esc(v.merchant_on_receipt||"—")}<br>${v.receipt_total!=null?fmt(v.receipt_total):"—"} · ${esc(v.receipt_date||"—")}</div></div></div><div class="mono" style="font-size:12px;margin-bottom:${v.flagged_items&&v.flagged_items.length?'8px':'0'}">merchant ${mk(m.merchant)} &nbsp; amount ${mk(m.amount)} &nbsp; date ${mk(m.date)}</div>${(v.flagged_items||[]).map(f=>`<div class="flagline"><span class="tag red" style="flex:0 0 auto">${esc(f.category)}</span><span style="font-size:13px">${esc(f.item)}${f.amount!=null?" — "+fmt(f.amount):""}</span></div>`).join("")}${v.note?`<div class="sub" style="margin-top:8px">${esc(v.note)}</div>`:""}</div></div>`;}
+function openReceipt(key){const sub=S.inbox.find(s=>s.id===S.openSub);if(!sub)return;const it=sub.items.find(i=>i.txId===key);if(!it||!it.receipt)return;const w=window.open("");if(w)w.document.write(`<body style="margin:0;background:#111"><img src="data:${it.receipt.media};base64,${it.receipt.data}" style="max-width:100%">`);}
+async function checkOne(subId,key){const sub=S.inbox.find(s=>s.id===subId);const it=sub&&sub.items.find(i=>i.txId===key);if(!it||!it.receipt)return;S.verifs[key]={__busy:true};renderReviewOne();try{const v=await callAI({action:"verify",charge:it,policy:S.policy,fileData:it.receipt.data,media:it.receipt.media});S.verifs[key]=v;it.verification=v;dbSaveVerification(it.txId,v);}catch(e){S.verifs[key]={__err:"Couldn't verify — open the receipt and judge by hand."};}renderReviewOne();}
+async function checkAll(subId){const sub=S.inbox.find(s=>s.id===subId);if(!sub)return;for(const it of sub.items){if(it.receipt&&!it.decision)await checkOne(subId,it.txId);}}
+async function decide(subId,key,d){const sub=S.inbox.find(s=>s.id===subId);const it=sub.items.find(i=>i.txId===key);try{await dbDecide(it,sub,d);it.decision=d;}catch(e){alert("Save failed: "+(e.message||e));return;}S.ledger=await dbLedger();renderReviewOne();}
+function exportCsv(){const head="approved_on,date,merchant,amount,reference\n";const body=S.ledger.map(r=>[r.approvedAt,r.date,'"'+(r.merchant||"")+'"',r.amount.toFixed(2),r.ref].join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([head+body],{type:"text/csv"}));a.download="reimbursement_ledger.csv";a.click();}
+function addPol(){const v=($("polIn").value||"").trim();if(v){S.policy.push(v);renderReviewHome();}}
+function delPol(i){S.policy.splice(i,1);renderReviewHome();}
+
+/* ---------- live polling ---------- */
+let _inboxSig="",_paidSig="";
+async function poll(){ if(!S.user) return; try{
+  if(S.role==="review"&&S.isReviewer){const inbox=await dbInbox();const sig=JSON.stringify(inbox.map(s=>[s.id,s.items.length,s.status,s.items.filter(i=>i.decision).length]));if(sig!==_inboxSig){_inboxSig=sig;S.inbox=inbox;if(!S.openSub)renderReviewHome();}}
+  if(S.role==="submit"){const led=await dbLedger();const sig=JSON.stringify(led.map(r=>r.key));if(sig!==_paidSig){_paidSig=sig;S.ledger=led;S.paid=led.map(r=>({key:r.key}));renderSubmit();}}
+}catch(e){} }
+setInterval(poll,6000);
+
+boot();
+</script>
+</body>
+</html>
