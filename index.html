@@ -105,7 +105,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const DEFAULT_POLICY = ["Alcohol","Tobacco / vape","Gift cards","Cash back / ATM","Lottery","Late fees & interest"];
 const S = {
-  user:null, isReviewer:false, role:"submit", intakeTab:"pdf",
+  user:null, isReviewer:false, role:"submit", intakeMsg:"",
   txs:[], claimed:{}, receipts:{}, submitterName:"",
   inbox:[], openSub:null, verifs:{},
   mine:[], fix:{},
@@ -250,12 +250,14 @@ function renderSubmit(){
   const eligible=S.txs.filter(t=>!paidSet.has(dedupKey(t)));
   const allChecked=eligible.length>0&&eligible.every(t=>S.claimed[t.id]);
   v.innerHTML=`
-  <div class="card"><h2>1 · Add statement</h2>
-    <p class="lead">Upload the month's statement PDF, or drop in screenshots of individual charges — drag a file in or click to choose.</p>
-    <div class="tabs">
-      <button class="${S.intakeTab==="pdf"?"on":""}" onclick="setTab('pdf')">PDF statement</button>
-      <button class="${S.intakeTab==="img"?"on":""}" onclick="setTab('img')">Charge screenshots</button>
-    </div><div id="intakeBody"></div>
+  <div class="card"><h2>1 · Add charges</h2>
+    <p class="lead">Drop in the statement PDF and/or screenshots of individual charges — you can mix them, all at once. Drag files in or click to choose.</p>
+    <label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropIntake(event)">
+      <input type="file" accept="application/pdf,image/*,.heic,.heif" multiple style="display:none" onchange="intakeFiles(this.files)">
+      <div class="drop-ic">⬇</div><div><b>Drop PDF or screenshots here</b> &nbsp;or click to choose</div>
+      <span id="intakeMsg" class="foot">${esc(S.intakeMsg||"")}</span>
+    </label>
+    ${S.txs.length?`<div class="btnrow" style="margin-top:10px"><button class="btn ghost sm" onclick="clearIntake()">Clear all ${S.txs.length}</button></div>`:""}
   </div>
   <div class="card"><h2>2 · Pick charges</h2><p class="lead">Check the ones you're claiming.</p>
     ${S.txs.length===0?'<div class="empty">No charges loaded yet.</div>':`
@@ -294,14 +296,29 @@ function renderSubmit(){
           </div></div>`;}).join("")}
       </div>`).join("")}
   </div>`;
-  renderIntake();
 }
-function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="img"){b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'img')"><input type="file" accept="image/*,.heic,.heif" multiple style="display:none" onchange="onShots(this.files)"><div class="drop-ic">⬇</div><div><b>Drop charge screenshots here</b> &nbsp;or click to choose</div><span id="imgMsg" class="foot"></span></label>`;}else{b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'pdf')"><input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"><div class="drop-ic">⬇</div><div><b>Drop the statement PDF here</b> &nbsp;or click to choose</div><span id="pdfMsg" class="foot"></span></label>`;}}
 function dz(e,on){e.preventDefault();e.currentTarget.classList.toggle("drag",!!on);}
-function dropFiles(e,kind){e.preventDefault();e.currentTarget.classList.remove("drag");const files=e.dataTransfer&&e.dataTransfer.files;if(!files||!files.length)return;if(kind==="pdf")onPdf(files[0]);else onShots(files);}
-function setTab(t){S.intakeTab=t;renderSubmit();}
-async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found in that PDF — try the screenshots tab.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF — try the screenshots tab.";}}
-async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots — try clearer images.";}}
+function dropIntake(e){e.preventDefault();e.currentTarget.classList.remove("drag");const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length)intakeFiles(files);}
+function clearIntake(){S.txs=[];S.claimed={};S.receipts={};S.intakeMsg="";renderSubmit();}
+// parse one PDF statement into charge rows
+async function parsePdfFile(file){const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}return parseStatementText(text);}
+// OCR one charge screenshot into charge rows
+async function ocrImageFile(file){const sh=await shrinkImage(file);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});return (rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)}));}
+// one pass over a mixed batch of PDFs + screenshots, merged into the charge list
+async function intakeFiles(fileList){
+  const files=[...fileList]; if(!files.length) return;
+  const isPdf=f=>f.type==="application/pdf"||/\.pdf$/i.test(f.name||"");
+  const pdfs=files.filter(isPdf), imgs=files.filter(f=>!isPdf(f));
+  const m=$("intakeMsg"); if(m) m.textContent=`Reading ${[pdfs.length?pdfs.length+" PDF":"",imgs.length?imgs.length+" image"+(imgs.length===1?"":"s"):""].filter(Boolean).join(" and ")}…`;
+  let found=[], errs=0;
+  for(const f of pdfs){ try{ found=found.concat(await parsePdfFile(f)); }catch(e){ errs++; } }
+  for(const f of imgs){ try{ found=found.concat(await ocrImageFile(f)); }catch(e){ errs++; } }
+  if(!found.length){ S.intakeMsg = errs?"Couldn't read those files — try a clearer screenshot or the PDF.":"No charges found in those files."; renderSubmit(); return; }
+  const seen=new Set(S.txs.map(t=>dedupKey(t))); let added=0, dups=0;
+  for(const t of found){ const k=dedupKey(t); if(seen.has(k)){ dups++; continue; } seen.add(k); S.txs.push(t); added++; }
+  S.intakeMsg = `Added ${added} charge${added===1?"":"s"}.`+(dups?` ${dups} already in the list.`:"")+(errs?` ${errs} file${errs===1?"":"s"} couldn't be read.`:"");
+  renderSubmit();
+}
 function toggleClaim(id){S.claimed[id]=!S.claimed[id];renderSubmit();}
 function toggleAll(on){const paidSet=new Set((S.paid||[]).map(p=>p.key));S.txs.forEach(t=>{if(!paidSet.has(dedupKey(t)))S.claimed[t.id]=on;});renderSubmit();}
 function dropReceipt(e,id){e.preventDefault();e.currentTarget.classList.remove("drag");const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)attachReceipt(id,f);}
