@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Reimbursement Review</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
 <style>
@@ -137,7 +138,8 @@ function nearDupOf(item,ledger){
   return null;
 }
 function readB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("read"));r.readAsDataURL(file);});}
-function shrinkImage(file){return new Promise(async res=>{if(file.type==="application/pdf"){res({media:"application/pdf",data:await readB64(file),name:file.name});return;}const url=URL.createObjectURL(file);const img=new Image();img.onload=()=>{const max=1400,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=img.width*sc;c.height=img.height*sc;c.getContext("2d").drawImage(img,0,0,c.width,c.height);res({media:"image/jpeg",data:c.toDataURL("image/jpeg",0.72).split(",")[1],name:file.name});URL.revokeObjectURL(url);};img.onerror=async()=>res({media:file.type||"image/jpeg",data:await readB64(file),name:file.name});img.src=url;});}
+function isHeic(file){return /heic|heif/i.test(file.type||"")||/\.(heic|heif)$/i.test(file.name||"");}
+function shrinkImage(file){return new Promise(async res=>{if(file.type==="application/pdf"){res({media:"application/pdf",data:await readB64(file),name:file.name});return;}let src=file;if(isHeic(file)&&window.heic2any){try{const out=await heic2any({blob:file,toType:"image/jpeg",quality:0.85});src=Array.isArray(out)?out[0]:out;}catch(e){}}const url=URL.createObjectURL(src);const img=new Image();img.onload=()=>{const max=1400,sc=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=img.width*sc;c.height=img.height*sc;c.getContext("2d").drawImage(img,0,0,c.width,c.height);res({media:"image/jpeg",data:c.toDataURL("image/jpeg",0.72).split(",")[1],name:file.name});URL.revokeObjectURL(url);};img.onerror=async()=>res({media:(src.type&&!/heic|heif/i.test(src.type))?src.type:"image/jpeg",data:await readB64(src),name:file.name});img.src=url;});}
 
 /* ---------- AI via Edge Function ---------- */
 async function callAI(body){
@@ -269,7 +271,7 @@ function renderSubmit(){
       <input type="text" placeholder="Note (optional)" value="${esc(r&&r.note||"")}" oninput="setNote('${t.id}',this.value)" style="margin-top:7px;max-width:340px"></div>
       <div class="att-amt amt">${fmt(t.amount)}</div>
       <label class="rdrop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropReceipt(event,'${t.id}')">
-        <input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])">
+        <input type="file" accept="image/*,.heic,.heif,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])">
         ${r&&r.data?(r.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${r.media};base64,${r.data}">`)+'<span class="rdrop-t">Replace</span>':'<span class="rdrop-ic">⬇</span><span class="rdrop-t">Drop or click</span>'}
       </label></div>`;}).join("")}
   </div>
@@ -288,13 +290,13 @@ function renderSubmit(){
           <div class="att-amt amt">${fmt(it.amount)}</div>
           <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             ${st==="approved"?'<span class="tag green">approved</span>':st==="declined"?'<span class="tag red">declined</span>':st==="returned"?'<span class="tag amber">sent back</span>':'<span class="tag slate">pending</span>'}
-            ${st==="returned"?`<label class="rdrop" style="min-width:118px" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFix(event,'${it.txId}')"><input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachFix('${it.txId}',this.files[0])">${fixR?(fixR.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${fixR.media};base64,${fixR.data}">`)+'<span class="rdrop-t">Replace</span>':'<span class="rdrop-ic">⬇</span><span class="rdrop-t">New receipt</span>'}</label><button class="btn teal sm" onclick="resend('${s.id}','${it.txId}')">Resend</button>`:""}
+            ${st==="returned"?`<label class="rdrop" style="min-width:118px" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFix(event,'${it.txId}')"><input type="file" accept="image/*,.heic,.heif,application/pdf" style="display:none" onchange="attachFix('${it.txId}',this.files[0])">${fixR?(fixR.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${fixR.media};base64,${fixR.data}">`)+'<span class="rdrop-t">Replace</span>':'<span class="rdrop-ic">⬇</span><span class="rdrop-t">New receipt</span>'}</label><button class="btn teal sm" onclick="resend('${s.id}','${it.txId}')">Resend</button>`:""}
           </div></div>`;}).join("")}
       </div>`).join("")}
   </div>`;
   renderIntake();
 }
-function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="img"){b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'img')"><input type="file" accept="image/*" multiple style="display:none" onchange="onShots(this.files)"><div class="drop-ic">⬇</div><div><b>Drop charge screenshots here</b> &nbsp;or click to choose</div><span id="imgMsg" class="foot"></span></label>`;}else{b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'pdf')"><input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"><div class="drop-ic">⬇</div><div><b>Drop the statement PDF here</b> &nbsp;or click to choose</div><span id="pdfMsg" class="foot"></span></label>`;}}
+function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="img"){b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'img')"><input type="file" accept="image/*,.heic,.heif" multiple style="display:none" onchange="onShots(this.files)"><div class="drop-ic">⬇</div><div><b>Drop charge screenshots here</b> &nbsp;or click to choose</div><span id="imgMsg" class="foot"></span></label>`;}else{b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'pdf')"><input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"><div class="drop-ic">⬇</div><div><b>Drop the statement PDF here</b> &nbsp;or click to choose</div><span id="pdfMsg" class="foot"></span></label>`;}}
 function dz(e,on){e.preventDefault();e.currentTarget.classList.toggle("drag",!!on);}
 function dropFiles(e,kind){e.preventDefault();e.currentTarget.classList.remove("drag");const files=e.dataTransfer&&e.dataTransfer.files;if(!files||!files.length)return;if(kind==="pdf")onPdf(files[0]);else onShots(files);}
 function setTab(t){S.intakeTab=t;renderSubmit();}
