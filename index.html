@@ -32,6 +32,15 @@ body{margin:0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);
 .drop.drag{border-color:var(--teal);background:#E4F1F2}
 .drop-ic{font-size:22px;line-height:1;color:var(--teal)}
 .drop b{color:var(--ink)}
+.attach{align-items:center}
+.att-main{min-width:0;flex:1}
+.att-amt{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;font-size:17px;font-weight:600;color:var(--ink);min-width:92px;text-align:right;flex:0 0 auto}
+.rdrop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:2px dashed var(--line);border-radius:8px;padding:9px 10px;min-width:104px;cursor:pointer;background:#fff;color:var(--slate);font-size:11px;text-align:center;flex:0 0 auto}
+.rdrop:hover{border-color:var(--teal)}
+.rdrop.drag{border-color:var(--teal);background:#E4F1F2}
+.rdrop-ic{font-size:16px;line-height:1;color:var(--teal)}
+.rdrop-t{font-weight:600}
+.mine-row{display:flex;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--hair)}
 label.fld{display:block;font-size:12px;font-weight:600;color:var(--slate);margin:0 0 5px}
 textarea,input[type=text],input[type=email],input[type=number]{font-family:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:#fff;width:100%}
 textarea{min-height:120px;resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
@@ -98,6 +107,7 @@ const S = {
   user:null, isReviewer:false, role:"submit", intakeTab:"pdf",
   txs:[], claimed:{}, receipts:{}, submitterName:"",
   inbox:[], openSub:null, verifs:{},
+  mine:[], fix:{},
   ledger:[], paid:[], policy:[...DEFAULT_POLICY]
 };
 
@@ -121,9 +131,10 @@ async function callAI(body){
 }
 
 /* ---------- data layer (Supabase) ---------- */
-function mapItem(r){return {txId:r.id,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref||"",card:r.card||"",note:r.note||"",decision:r.decision||null,verification:r.verification||null,receipt:r.receipt_data?{media:r.receipt_media,data:r.receipt_data}:null};}
+function mapItem(r){return {txId:r.id,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref||"",card:r.card||"",note:r.note||"",decision:r.decision||null,reason:r.decline_reason||"",verification:r.verification||null,receipt:r.receipt_data?{media:r.receipt_media,data:r.receipt_data}:null};}
 async function dbLedger(){const{data}=await sb.from("ledger").select("*");return(data||[]).map(r=>({key:r.dedup_key,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref,approvedAt:(r.approved_at||"").slice(0,10),from:r.approved_by||""}));}
-async function dbInbox(){const{data}=await sb.from("submissions").select("id,submitter,created_at,status,items(*)").order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,at:s.created_at,status:s.status,items:(s.items||[]).map(mapItem)}));}
+async function dbInbox(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,items(*)").order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,items:(s.items||[]).map(mapItem)}));}
+async function dbMine(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,items(*)").eq("submitted_by",S.user.id).order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,items:(s.items||[]).map(mapItem)}));}
 async function dbSubmit(name,items){
   const{data:sub,error}=await sb.from("submissions").insert({submitter:name,submitted_by:S.user.id}).select().single();
   if(error)throw error;
@@ -132,13 +143,19 @@ async function dbSubmit(name,items){
   if(e2)throw e2;
 }
 async function dbSaveVerification(itemId,v){await sb.from("items").update({verification:v}).eq("id",itemId);}
-async function dbDecide(item,sub,d){
-  await sb.from("items").update({decision:d,decided_at:new Date().toISOString(),decided_by:S.user.email}).eq("id",item.txId);
+async function dbDecide(item,sub,d,reason){
+  await sb.from("items").update({decision:d,decline_reason:reason||null,decided_at:new Date().toISOString(),decided_by:S.user.email}).eq("id",item.txId);
   if(d==="approved"){
     await sb.from("ledger").upsert({dedup_key:dedupKey(item),tx_date:item.date,merchant:item.merchant,amount:item.amount,ref:item.ref,approved_by:S.user.email,submission_id:sub.id},{onConflict:"dedup_key",ignoreDuplicates:true});
   }
-  const all=sub.items.every(i=>(i.txId===item.txId?d:i.decision));
-  await sb.from("submissions").update({status:all?"reviewed":"open"}).eq("id",sub.id);
+  // "final" = every item is approved or hard-declined (a returned item is back with the submitter)
+  const final=sub.items.every(i=>{const dd=i.txId===item.txId?d:i.decision;return dd==="approved"||dd==="declined";});
+  await sb.from("submissions").update({status:final?"reviewed":"open"}).eq("id",sub.id);
+}
+// submitter re-attaches a receipt to a returned item and sends it back into review
+async function dbResend(item){
+  await sb.from("items").update({decision:null,decline_reason:null,verification:null,decided_at:null,decided_by:null,receipt_data:item.receipt?item.receipt.data:null,receipt_media:item.receipt?item.receipt.media:null}).eq("id",item.txId);
+  await sb.from("submissions").update({status:"open"}).eq("id",item.subId);
 }
 
 /* ============================ AUTH ============================ */
@@ -176,6 +193,7 @@ async function onSignedIn(user){
   const {data}=await sb.from("reviewers").select("email").ilike("email",user.email).maybeSingle();
   S.isReviewer=!!data;
   S.ledger=await dbLedger(); S.paid=S.ledger.map(r=>({key:r.key}));
+  S.mine=await dbMine();
   renderApp();
 }
 
@@ -211,6 +229,8 @@ function renderSubmit(){
   const v=$("submitView"); if(!v) return;
   const claimedTxs=S.txs.filter(t=>S.claimed[t.id]);
   const paidSet=new Set((S.paid||[]).map(p=>p.key));
+  const eligible=S.txs.filter(t=>!paidSet.has(dedupKey(t)));
+  const allChecked=eligible.length>0&&eligible.every(t=>S.claimed[t.id]);
   v.innerHTML=`
   <div class="card"><h2>1 · Add statement</h2>
     <p class="lead">Upload the month's statement PDF, or drop in screenshots of individual charges — drag a file in or click to choose.</p>
@@ -221,7 +241,7 @@ function renderSubmit(){
   </div>
   <div class="card"><h2>2 · Pick charges</h2><p class="lead">Check the ones you're claiming.</p>
     ${S.txs.length===0?'<div class="empty">No charges loaded yet.</div>':`
-    <table><thead><tr><th style="width:28px"></th><th style="width:48px">Date</th><th>Merchant</th><th>Reference</th><th class="amt">Amount</th><th></th></tr></thead>
+    <table><thead><tr><th style="width:28px"><input type="checkbox" class="chk" ${allChecked?"checked":""} onchange="toggleAll(this.checked)" title="Select all"></th><th style="width:48px">Date</th><th>Merchant</th><th>Reference</th><th class="amt">Amount</th><th></th></tr></thead>
     <tbody>${S.txs.map(t=>{const seen=paidSet.has(dedupKey(t));return `<tr class="${seen?'dim':''}">
       <td><input type="checkbox" class="chk" ${S.claimed[t.id]?"checked":""} ${seen?"disabled":""} onchange="toggleClaim('${t.id}')"></td>
       <td class="mono">${esc(t.date)}</td><td class="merch">${esc(t.merchant)}</td><td class="ref">${esc(t.ref)||"—"}</td>
@@ -229,14 +249,32 @@ function renderSubmit(){
   </div>
   <div class="card"><h2>3 · Add receipts</h2><p class="lead">One receipt per charge. If a receipt is gone, leave a quick note instead.</p>
     ${claimedTxs.length===0?'<div class="empty">Check at least one charge above.</div>':claimedTxs.map(t=>{const r=S.receipts[t.id];return `<div class="attach ${r&&r.data?'ok':'missing'}">
-      <div style="min-width:0"><div class="merch">${esc(t.merchant)}</div><div class="sub mono">${esc(t.date)} · ${fmt(t.amount)}${t.ref?" · "+esc(t.ref):""}</div>
+      <div class="att-main"><div class="merch">${esc(t.merchant)}</div><div class="sub mono">${esc(t.date)}${t.ref?" · "+esc(t.ref):""}</div>
       <input type="text" placeholder="Note (optional)" value="${esc(r&&r.note||"")}" oninput="setNote('${t.id}',this.value)" style="margin-top:7px;max-width:340px"></div>
-      <div style="display:flex;gap:9px;align-items:center">${r&&r.data?(r.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${r.media};base64,${r.data}">`):""}
-      <label class="btn ghost sm" style="cursor:pointer">${r&&r.data?"Replace":"Attach"}<input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])"></label></div></div>`;}).join("")}
+      <div class="att-amt amt">${fmt(t.amount)}</div>
+      <label class="rdrop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropReceipt(event,'${t.id}')">
+        <input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])">
+        ${r&&r.data?(r.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${r.media};base64,${r.data}">`)+'<span class="rdrop-t">Replace</span>':'<span class="rdrop-ic">⬇</span><span class="rdrop-t">Drop or click</span>'}
+      </label></div>`;}).join("")}
   </div>
   <div class="card"><h2>4 · Submit</h2><p class="lead">Sends each charge with its receipt to the reviewer.</p>
     <div class="btnrow"><button class="btn teal" id="subBtn" onclick="doSubmit()" ${claimedTxs.length===0?"disabled":""}>Submit ${claimedTxs.length} charge${claimedTxs.length===1?"":"s"}</button></div>
     <div class="foot" id="submitMsg"></div>
+  </div>
+  <div class="card"><h2>Your submissions</h2><p class="lead">What's happened to each charge you've sent. Anything sent back can be fixed and resent here.</p>
+    ${S.mine.length===0?'<div class="empty">Nothing submitted yet.</div>':S.mine.map(s=>`
+      <div style="border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:10px">
+        <div class="sub mono" style="margin-bottom:6px">${esc((s.at||"").slice(0,10))} · ${s.items.length} charge${s.items.length===1?"":"s"} · ${fmt(s.items.reduce((a,i)=>a+i.amount,0))}</div>
+        ${s.items.map(it=>{const st=it.decision,fixR=S.fix[it.txId];return `<div class="mine-row">
+          <div class="att-main"><div class="merch">${esc(it.merchant)}</div><div class="sub mono">${esc(it.date)}</div>
+            ${st==="returned"?`<div class="sub" style="color:var(--amber);margin-top:3px">Sent back: ${esc(it.reason||"")}</div>`:""}
+            ${st==="declined"?`<div class="sub" style="color:var(--red);margin-top:3px">Declined${it.reason?": "+esc(it.reason):""} — start a new request to retry.</div>`:""}</div>
+          <div class="att-amt amt">${fmt(it.amount)}</div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            ${st==="approved"?'<span class="tag green">approved</span>':st==="declined"?'<span class="tag red">declined</span>':st==="returned"?'<span class="tag amber">sent back</span>':'<span class="tag slate">pending</span>'}
+            ${st==="returned"?`<label class="rdrop" style="min-width:118px" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFix(event,'${it.txId}')"><input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachFix('${it.txId}',this.files[0])">${fixR?(fixR.media==="application/pdf"?'<div class="thumb-pdf">PDF</div>':`<img class="thumb" src="data:${fixR.media};base64,${fixR.data}">`)+'<span class="rdrop-t">Replace</span>':'<span class="rdrop-ic">⬇</span><span class="rdrop-t">New receipt</span>'}</label><button class="btn teal sm" onclick="resend('${s.id}','${it.txId}')">Resend</button>`:""}
+          </div></div>`;}).join("")}
+      </div>`).join("")}
   </div>`;
   renderIntake();
 }
@@ -247,12 +285,23 @@ function setTab(t){S.intakeTab=t;renderSubmit();}
 async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found in that PDF — try the screenshots tab.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF — try the screenshots tab.";}}
 async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots — try clearer images.";}}
 function toggleClaim(id){S.claimed[id]=!S.claimed[id];renderSubmit();}
+function toggleAll(on){const paidSet=new Set((S.paid||[]).map(p=>p.key));S.txs.forEach(t=>{if(!paidSet.has(dedupKey(t)))S.claimed[t.id]=on;});renderSubmit();}
+function dropReceipt(e,id){e.preventDefault();e.currentTarget.classList.remove("drag");const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)attachReceipt(id,f);}
+async function attachFix(id,file){if(!file)return;const sh=await shrinkImage(file);S.fix[id]={media:sh.media,data:sh.data};renderSubmit();}
+function dropFix(e,id){e.preventDefault();e.currentTarget.classList.remove("drag");const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)attachFix(id,f);}
+async function resend(subId,itemId){
+  const sub=S.mine.find(s=>s.id===subId);const it=sub&&sub.items.find(i=>i.txId===itemId);if(!it)return;
+  const fixR=S.fix[itemId];
+  const updated=Object.assign({},it,{subId:subId,receipt:fixR?{media:fixR.media,data:fixR.data}:it.receipt});
+  try{ await dbResend(updated); }catch(e){ alert("Resend failed: "+(e.message||e)); return; }
+  delete S.fix[itemId]; S.mine=await dbMine(); renderSubmit();
+}
 function setNote(id,v){S.receipts[id]=Object.assign({},S.receipts[id]||{},{note:v});}
 async function attachReceipt(id,file){if(!file)return;const sh=await shrinkImage(file);S.receipts[id]=Object.assign({},S.receipts[id]||{},{name:sh.name,media:sh.media,data:sh.data});renderSubmit();}
 async function doSubmit(){
   const msg=$("submitMsg"); $("subBtn").disabled=true; msg.textContent="Submitting…";
   const items=S.txs.filter(t=>S.claimed[t.id]).map(t=>{const r=S.receipts[t.id]||{};return {date:t.date,merchant:t.merchant,amount:t.amount,ref:t.ref,card:t.card,note:r.note||"",receipt:r.data?{media:r.media,data:r.data}:null};});
-  try{ await dbSubmit(S.submitterName,items); S.txs=[];S.claimed={};S.receipts={}; renderSubmit(); $("submitMsg").textContent="Submitted — the reviewer will see it shortly."; }
+  try{ await dbSubmit(S.submitterName,items); S.txs=[];S.claimed={};S.receipts={}; S.mine=await dbMine(); renderSubmit(); $("submitMsg").textContent="Submitted — the reviewer will see it shortly."; }
   catch(e){ msg.textContent="Submit failed: "+(e.message||e); $("subBtn").disabled=false; }
 }
 
@@ -308,7 +357,7 @@ function renderReviewOne(){
         <div style="display:flex;gap:9px;align-items:center;flex:0 0 auto">${it.receipt?(it.receipt.media==="application/pdf"?`<span class="thumb-pdf" onclick="openReceipt('${key}')">PDF</span>`:`<img class="thumb" src="data:${it.receipt.media};base64,${it.receipt.data}" onclick="openReceipt('${key}')">`):""}
         <button class="btn ghost sm" onclick="checkOne('${sub.id}','${key}')" ${it.receipt?"":"disabled"}>${ver&&ver.__busy?"Checking…":"Check"}</button></div></div>
       ${ver&&!ver.__busy&&!ver.__err?verdictHtml(it,ver):""}${ver&&ver.__err?`<div class="notebar" style="border-left-color:var(--amber)"><span>!</span><div>${esc(ver.__err)}</div></div>`:""}
-      <div class="btnrow">${dec?`<span class="tag ${dec==="approved"?"green":"red"}">${dec}</span>`:`<button class="btn green sm" onclick="decide('${sub.id}','${key}','approved')" ${dup?"disabled":""}>Approve → ledger</button><button class="btn ghost sm" onclick="decide('${sub.id}','${key}','declined')">Decline</button>`}</div>
+      <div class="btnrow">${dec?`<span class="tag ${dec==="approved"?"green":dec==="returned"?"amber":"red"}">${dec==="returned"?"sent back":dec}</span>${it.reason?`<span class="sub" style="align-self:center">— ${esc(it.reason)}</span>`:""}`:`<button class="btn green sm" onclick="decide('${sub.id}','${key}','approved')" ${dup?"disabled":""}>Approve → ledger</button><button class="btn ghost sm" onclick="decide('${sub.id}','${key}','returned')">Send back</button><button class="btn ghost sm" onclick="decide('${sub.id}','${key}','declined')">Decline</button>`}</div>
     </div>`;}).join("")}
   </div>`;
 }
@@ -316,7 +365,14 @@ function verdictHtml(it,v){const cls=v.verdict==="match"?"match":v.verdict==="fl
 function openReceipt(key){const sub=S.inbox.find(s=>s.id===S.openSub);if(!sub)return;const it=sub.items.find(i=>i.txId===key);if(!it||!it.receipt)return;const w=window.open("");if(w)w.document.write(`<body style="margin:0;background:#111"><img src="data:${it.receipt.media};base64,${it.receipt.data}" style="max-width:100%">`);}
 async function checkOne(subId,key){const sub=S.inbox.find(s=>s.id===subId);const it=sub&&sub.items.find(i=>i.txId===key);if(!it||!it.receipt)return;S.verifs[key]={__busy:true};renderReviewOne();try{const v=await callAI({action:"verify",charge:it,policy:S.policy,fileData:it.receipt.data,media:it.receipt.media});S.verifs[key]=v;it.verification=v;dbSaveVerification(it.txId,v);}catch(e){S.verifs[key]={__err:"Couldn't verify — open the receipt and judge by hand."};}renderReviewOne();}
 async function checkAll(subId){const sub=S.inbox.find(s=>s.id===subId);if(!sub)return;for(const it of sub.items){if(it.receipt&&!it.decision)await checkOne(subId,it.txId);}}
-async function decide(subId,key,d){const sub=S.inbox.find(s=>s.id===subId);const it=sub.items.find(i=>i.txId===key);try{await dbDecide(it,sub,d);it.decision=d;}catch(e){alert("Save failed: "+(e.message||e));return;}S.ledger=await dbLedger();renderReviewOne();}
+async function decide(subId,key,d){
+  const sub=S.inbox.find(s=>s.id===subId);const it=sub.items.find(i=>i.txId===key);
+  let reason="";
+  if(d==="returned"){ reason=(prompt("Send back to "+sub.by+" — what needs fixing? (e.g. need an itemized receipt)")||"").trim(); if(!reason) return; }
+  if(d==="declined"){ if(!confirm("Hard-decline this charge? "+sub.by+" would have to start a new request to retry.")) return; reason=(prompt("Reason (optional):")||"").trim(); }
+  try{ await dbDecide(it,sub,d,reason); it.decision=d; it.reason=reason; }catch(e){ alert("Save failed: "+(e.message||e)); return; }
+  S.ledger=await dbLedger(); renderReviewOne();
+}
 function exportCsv(){const head="approved_on,date,merchant,amount,reference\n";const body=S.ledger.map(r=>[r.approvedAt,r.date,'"'+(r.merchant||"")+'"',r.amount.toFixed(2),r.ref].join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([head+body],{type:"text/csv"}));a.download="reimbursement_ledger.csv";a.click();}
 function addPol(){const v=($("polIn").value||"").trim();if(v){S.policy.push(v);renderReviewHome();}}
 function delPol(i){S.policy.splice(i,1);renderReviewHome();}
@@ -325,7 +381,7 @@ function delPol(i){S.policy.splice(i,1);renderReviewHome();}
 let _inboxSig="",_paidSig="";
 async function poll(){ if(!S.user) return; try{
   if(S.role==="review"&&S.isReviewer){const inbox=await dbInbox();const sig=JSON.stringify(inbox.map(s=>[s.id,s.items.length,s.status,s.items.filter(i=>i.decision).length]));if(sig!==_inboxSig){_inboxSig=sig;S.inbox=inbox;if(!S.openSub)renderReviewHome();}}
-  if(S.role==="submit"){const led=await dbLedger();const sig=JSON.stringify(led.map(r=>r.key));if(sig!==_paidSig){_paidSig=sig;S.ledger=led;S.paid=led.map(r=>({key:r.key}));renderSubmit();}}
+  if(S.role==="submit"){const led=await dbLedger();const mine=await dbMine();const sig=JSON.stringify(led.map(r=>r.key))+"|"+JSON.stringify(mine.map(s=>s.items.map(i=>i.decision)));if(sig!==_paidSig){_paidSig=sig;S.ledger=led;S.paid=led.map(r=>({key:r.key}));S.mine=mine;renderSubmit();}}
 }catch(e){} }
 setInterval(poll,6000);
 
