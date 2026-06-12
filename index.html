@@ -231,8 +231,7 @@ function renderSubmit(){
       <label class="btn ghost sm" style="cursor:pointer">${r&&r.data?"Replace":"Attach"}<input type="file" accept="image/*,application/pdf" style="display:none" onchange="attachReceipt('${t.id}',this.files[0])"></label></div></div>`;}).join("")}
   </div>
   <div class="card"><h2>4 · Submit</h2><p class="lead">Sends each charge with its receipt to the reviewer.</p>
-    <div class="btnrow"><button class="btn teal" id="subBtn" onclick="doSubmit()" ${claimedTxs.length===0?"disabled":""}>Submit ${claimedTxs.length} charge${claimedTxs.length===1?"":"s"}</button>
-    <button class="btn ghost sm" onclick="loadSample()">Load sample</button></div>
+    <div class="btnrow"><button class="btn teal" id="subBtn" onclick="doSubmit()" ${claimedTxs.length===0?"disabled":""}>Submit ${claimedTxs.length} charge${claimedTxs.length===1?"":"s"}</button></div>
     <div class="foot" id="submitMsg"></div>
   </div>`;
   renderIntake();
@@ -242,7 +241,6 @@ function setTab(t){S.intakeTab=t;renderSubmit();}
 async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found — try paste.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF. Try paste.";}}
 async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots. Use the paste tab.";}}
 function onPaste(){const t=($("pasteBox").value||"").trim();if(!t)return;S.txs=parseStatementText(t);S.claimed={};S.receipts={};renderSubmit();}
-function loadSample(){S.txs=parseStatementText(`4/8 Purchase authorized on 04/07 Ralphs #0739 Dana Point CA S346098053092951 Card 8464 11.65\n4/10 Purchase authorized on 04/09 Ic* Bevmo Via Inst Bevmo.Com CA S356100117285286 Card 8464 15.90\n4/15 Purchase authorized on 04/14 Cvs/Pharmacy #0991 Dana Point CA S356104755255040 Card 8464 17.33`);S.claimed={};S.receipts={};renderSubmit();}
 function toggleClaim(id){S.claimed[id]=!S.claimed[id];renderSubmit();}
 function setNote(id,v){S.receipts[id]=Object.assign({},S.receipts[id]||{},{note:v});}
 async function attachReceipt(id,file){if(!file)return;const sh=await shrinkImage(file);S.receipts[id]=Object.assign({},S.receipts[id]||{},{name:sh.name,media:sh.media,data:sh.data});renderSubmit();}
