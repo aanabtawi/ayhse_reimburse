@@ -27,6 +27,11 @@ body{margin:0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);
 .tabs button{font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 13px;border:1px solid var(--line);background:#fff;color:var(--slate);cursor:pointer}
 .tabs button:first-child{border-radius:7px 0 0 7px}.tabs button:last-child{border-radius:0 7px 7px 0}
 .tabs button.on{background:var(--teal);border-color:var(--teal);color:#fff}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center;border:2px dashed var(--line);border-radius:10px;padding:30px 18px;cursor:pointer;color:var(--slate);background:#FAFBFC;transition:border-color .15s,background .15s}
+.drop:hover{border-color:var(--teal);background:#fff}
+.drop.drag{border-color:var(--teal);background:#E4F1F2}
+.drop-ic{font-size:22px;line-height:1;color:var(--teal)}
+.drop b{color:var(--ink)}
 label.fld{display:block;font-size:12px;font-weight:600;color:var(--slate);margin:0 0 5px}
 textarea,input[type=text],input[type=email],input[type=number]{font-family:inherit;font-size:13px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:#fff;width:100%}
 textarea{min-height:120px;resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
@@ -208,11 +213,10 @@ function renderSubmit(){
   const paidSet=new Set((S.paid||[]).map(p=>p.key));
   v.innerHTML=`
   <div class="card"><h2>1 · Add statement</h2>
-    <p class="lead">Upload the month's statement (PDF), drop in charge screenshots, or paste the lines. Every row stays editable.</p>
+    <p class="lead">Upload the month's statement PDF, or drop in screenshots of individual charges — drag a file in or click to choose.</p>
     <div class="tabs">
       <button class="${S.intakeTab==="pdf"?"on":""}" onclick="setTab('pdf')">PDF statement</button>
       <button class="${S.intakeTab==="img"?"on":""}" onclick="setTab('img')">Charge screenshots</button>
-      <button class="${S.intakeTab==="paste"?"on":""}" onclick="setTab('paste')">Paste text</button>
     </div><div id="intakeBody"></div>
   </div>
   <div class="card"><h2>2 · Pick charges</h2><p class="lead">Check the ones you're claiming.</p>
@@ -236,11 +240,12 @@ function renderSubmit(){
   </div>`;
   renderIntake();
 }
-function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="pdf"){b.innerHTML=`<label class="fld">Statement PDF</label><label class="btn ghost" style="cursor:pointer">Choose PDF<input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"></label><span id="pdfMsg" class="foot" style="margin-left:10px"></span>`;}else if(S.intakeTab==="img"){b.innerHTML=`<label class="fld">Charge screenshots</label><label class="btn ghost" style="cursor:pointer">Choose images<input type="file" accept="image/*" multiple style="display:none" onchange="onShots(this.files)"></label><span id="imgMsg" class="foot" style="margin-left:10px"></span>`;}else{b.innerHTML=`<label class="fld">Paste statement lines</label><textarea id="pasteBox" placeholder="4/8 Purchase authorized on 04/06 Shell Oil ... S35609... Card 8464 25.39"></textarea><div class="btnrow"><button class="btn teal sm" onclick="onPaste()">Parse</button></div>`;}}
+function renderIntake(){const b=$("intakeBody");if(!b)return;if(S.intakeTab==="img"){b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'img')"><input type="file" accept="image/*" multiple style="display:none" onchange="onShots(this.files)"><div class="drop-ic">⬇</div><div><b>Drop charge screenshots here</b> &nbsp;or click to choose</div><span id="imgMsg" class="foot"></span></label>`;}else{b.innerHTML=`<label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFiles(event,'pdf')"><input type="file" accept="application/pdf" style="display:none" onchange="onPdf(this.files[0])"><div class="drop-ic">⬇</div><div><b>Drop the statement PDF here</b> &nbsp;or click to choose</div><span id="pdfMsg" class="foot"></span></label>`;}}
+function dz(e,on){e.preventDefault();e.currentTarget.classList.toggle("drag",!!on);}
+function dropFiles(e,kind){e.preventDefault();e.currentTarget.classList.remove("drag");const files=e.dataTransfer&&e.dataTransfer.files;if(!files||!files.length)return;if(kind==="pdf")onPdf(files[0]);else onShots(files);}
 function setTab(t){S.intakeTab=t;renderSubmit();}
-async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found — try paste.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF. Try paste.";}}
-async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots. Use the paste tab.";}}
-function onPaste(){const t=($("pasteBox").value||"").trim();if(!t)return;S.txs=parseStatementText(t);S.claimed={};S.receipts={};renderSubmit();}
+async function onPdf(file){if(!file)return;const msg=$("pdfMsg");msg.textContent="Reading PDF…";try{const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text="";for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();const rows={};c.items.forEach(it=>{const y=Math.round(it.transform[5]);(rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str});});Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{text+=rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(" ")+"\n";});}const txs=parseStatementText(text);if(!txs.length){msg.textContent="No charges found in that PDF — try the screenshots tab.";return;}S.txs=txs;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read that PDF — try the screenshots tab.";}}
+async function onShots(files){const msg=$("imgMsg");msg.textContent="Reading "+files.length+" image(s)…";let all=[];try{for(const f of files){const sh=await shrinkImage(f);const rows=await callAI({action:"ocr",fileData:sh.data,media:sh.media});all=all.concat((rows||[]).map(x=>({id:uid(),date:x.date||"",amount:parseFloat(x.amount)||0,ref:x.ref||"",card:x.card||"",type:"debit",merchant:(x.merchant||"(unlabeled)").slice(0,60)})));}if(!all.length){msg.textContent="No readable charges found.";return;}S.txs=all;S.claimed={};S.receipts={};renderSubmit();}catch(e){msg.textContent="Couldn't read the screenshots — try clearer images.";}}
 function toggleClaim(id){S.claimed[id]=!S.claimed[id];renderSubmit();}
 function setNote(id,v){S.receipts[id]=Object.assign({},S.receipts[id]||{},{note:v});}
 async function attachReceipt(id,file){if(!file)return;const sh=await shrinkImage(file);S.receipts[id]=Object.assign({},S.receipts[id]||{},{name:sh.name,media:sh.media,data:sh.data});renderSubmit();}
