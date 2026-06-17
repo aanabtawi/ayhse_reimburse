@@ -42,6 +42,17 @@ body{margin:0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);
 .rdrop-ic{font-size:16px;line-height:1;color:var(--teal)}
 .rdrop-t{font-weight:600}
 .mine-row{display:flex;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--hair)}
+.pkgrow{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:8px;background:#fff;cursor:pointer;font-family:inherit}
+.pkgrow:hover{border-color:var(--teal);background:#F4FAFA}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;flex:0 0 auto}
+.chev{color:var(--faint);font-size:18px;line-height:1}
+.rsec{margin-top:16px}
+.rsec-h{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--slate);padding:0 0 7px;border-bottom:2px solid var(--hair);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.rsec-h.need{color:var(--teal);border-bottom-color:var(--teal)}
+.rsec-h.appr{color:var(--green)}
+.rsec-h.sent{color:var(--amber)}
+.rsec-h.decl{color:var(--red)}
+.rsec-n{font-size:11px;font-weight:700;background:var(--hair);color:var(--slate);border-radius:10px;padding:1px 8px}
 .rcpts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .rcpt{position:relative;display:inline-block;line-height:0}
 .rcpt-x{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;border:none;background:var(--ink);color:#fff;font-size:13px;line-height:16px;text-align:center;cursor:pointer;padding:0}
@@ -129,7 +140,7 @@ const S = {
   user:null, isReviewer:false, role:"submit", intakeMsg:"",
   txs:[], claimed:{}, receipts:{}, submitterName:"", sources:[],
   inbox:[], openSub:null, verifs:{}, decideUI:{key:null,mode:null,text:""},
-  mine:[], fix:{},
+  mine:[], fix:{}, openMine:null,
   ledger:[], paid:[], policy:[...DEFAULT_POLICY]
 };
 
@@ -144,6 +155,7 @@ function parseStatementText(text){const lines=text.split(/\r?\n/),joined=[];for(
 function dedupKey(t){return t.ref?"ref:"+t.ref:"h:"+[t.date,Number(t.amount).toFixed(2),(t.merchant||"").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,14)].join("|");}
 // soft "possible duplicate": same amount, near date, similar vendor — but NOT an exact-code match
 function _dnum(s){const m=/(\d{1,2})\/(\d{1,2})/.exec(s||"");return m?(+m[1])*31+(+m[2]):null;}
+function itemSort(a,b){const da=_dnum(a.date),db=_dnum(b.date);if(da!=null&&db!=null&&da!==db)return da-db;if(da==null&&db!=null)return 1;if(da!=null&&db==null)return -1;const ma=(a.merchant||"").toLowerCase(),mb=(b.merchant||"").toLowerCase();if(ma<mb)return -1;if(ma>mb)return 1;return a.txId<b.txId?-1:a.txId>b.txId?1:0;}
 function _dateClose(a,b){const x=_dnum(a),y=_dnum(b);if(x==null||y==null)return true;return Math.abs(x-y)<=10;}
 function nearDupOf(item,ledger){
   const k=dedupKey(item), amt=Number(item.amount).toFixed(2);
@@ -172,8 +184,8 @@ async function callAI(body){
 /* ---------- data layer (Supabase) ---------- */
 function mapItem(r){const arr=Array.isArray(r.receipts)&&r.receipts.length?r.receipts.map(x=>({media:x.media,data:x.data})):(r.receipt_data?[{media:r.receipt_media,data:r.receipt_data}]:[]);return {txId:r.id,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref||"",card:r.card||"",note:r.note||"",decision:r.decision||null,reason:r.decline_reason||"",verification:r.verification||null,receipts:arr,receipt:arr[0]||null};}
 async function dbLedger(){const{data}=await sb.from("ledger").select("*");return(data||[]).map(r=>({key:r.dedup_key,date:r.tx_date,merchant:r.merchant,amount:Number(r.amount),ref:r.ref,approvedAt:(r.approved_at||"").slice(0,10),from:r.approved_by||""}));}
-async function dbInbox(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,sources,items(*)").order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,sources:s.sources||[],items:(s.items||[]).map(mapItem)}));}
-async function dbMine(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,sources,items(*)").eq("submitted_by",S.user.id).order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,sources:s.sources||[],items:(s.items||[]).map(mapItem)}));}
+async function dbInbox(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,sources,items(*)").order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,sources:s.sources||[],items:(s.items||[]).map(mapItem).sort(itemSort)}));}
+async function dbMine(){const{data}=await sb.from("submissions").select("id,submitter,submitted_by,created_at,status,sources,items(*)").eq("submitted_by",S.user.id).order("created_at",{ascending:false});return(data||[]).map(s=>({id:s.id,by:s.submitter,owner:s.submitted_by,at:s.created_at,status:s.status,sources:s.sources||[],items:(s.items||[]).map(mapItem).sort(itemSort)}));}
 async function dbSubmit(name,items,sources){
   const{data:sub,error}=await sb.from("submissions").insert({submitter:name,submitted_by:S.user.id,sources:sources||[]}).select().single();
   if(error)throw error;
@@ -270,7 +282,9 @@ function renderSubmit(){
   const paidSet=new Set((S.paid||[]).map(p=>p.key));
   const eligible=S.txs.filter(t=>!paidSet.has(dedupKey(t)));
   const allChecked=eligible.length>0&&eligible.every(t=>S.claimed[t.id]);
+  const _reviewed=S.mine.filter(pkgNeedsBadge).length;
   v.innerHTML=`
+  ${(!S.openMine&&_reviewed)?`<div class="notebar" style="border-left-color:var(--green);margin-bottom:14px"><span>✓</span><div><b>${_reviewed} of your submission${_reviewed===1?" was":"s were"} reviewed.</b> See <b>Your submissions</b> below to view what was approved, sent back, or declined.</div></div>`:""}
   <div class="card"><h2>1 · Add charges</h2>
     <p class="lead">Drop in the statement PDF and/or screenshots of individual charges — you can mix them, all at once. Drag files in or click to choose.</p>
     <label class="drop" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropIntake(event)">
@@ -303,21 +317,36 @@ function renderSubmit(){
     <div class="btnrow"><button class="btn teal" id="subBtn" onclick="doSubmit()" ${claimedTxs.length===0?"disabled":""}>Submit ${claimedTxs.length} charge${claimedTxs.length===1?"":"s"}</button></div>
     <div class="foot" id="submitMsg"></div>
   </div>
-  <div class="card"><h2>Your submissions</h2><p class="lead">What's happened to each charge you've sent. Anything sent back can be fixed and resent here.</p>
-    ${S.mine.length===0?'<div class="empty">Nothing submitted yet.</div>':S.mine.map(s=>`
-      <div style="border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:10px">
-        <div class="sub mono" style="margin-bottom:6px">${esc((s.at||"").slice(0,10))} · ${s.items.length} charge${s.items.length===1?"":"s"} · ${fmt(s.items.reduce((a,i)=>a+i.amount,0))}</div>
-        ${s.items.map(it=>{const st=it.decision,fixN=(S.fix[it.txId]||[]).length;return `<div class="mine-row">
-          <div class="att-main"><div class="merch">${esc(it.merchant)}</div><div class="sub mono">${esc(it.date)}</div>
-            ${st==="returned"?`<div class="sub" style="color:var(--amber);margin-top:3px">Sent back: ${esc(it.reason||"")}</div>`:""}
-            ${st==="declined"?`<div class="sub" style="color:var(--red);margin-top:3px">Declined${it.reason?": "+esc(it.reason):""} — start a new request to retry.</div>`:""}</div>
-          <div class="att-amt amt">${fmt(it.amount)}</div>
-          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-            ${st==="approved"?'<span class="tag green">approved</span>':st==="declined"?'<span class="tag red">declined</span>':st==="returned"?'<span class="tag amber">sent back</span>':'<span class="tag slate">pending</span>'}
-            ${st==="returned"?`<label class="rdrop" style="min-width:118px" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFix(event,'${it.txId}')"><input type="file" accept="image/*,.heic,.heif,application/pdf" style="display:none" onchange="attachFix('${it.txId}',this.files[0])"><span class="rdrop-ic">⬇</span><span class="rdrop-t">${fixN?fixN+" new — add more":"New receipt"}</span></label><button class="btn teal sm" onclick="resend('${s.id}','${it.txId}')">Resend</button>`:""}
-          </div></div>`;}).join("")}
-      </div>`).join("")}
+  <div class="card"><h2>Your submissions</h2>
+    ${S.mine.length===0?'<p class="lead">What happens to each charge you send shows up here.</p><div class="empty">Nothing submitted yet.</div>':(S.openMine?mineDetailHTML():mineListHTML())}
   </div>`;
+}
+function seenStore(){try{return JSON.parse(localStorage.getItem("reimb_seen")||"[]");}catch(e){return [];}}
+function markSeen(sig){try{const a=seenStore();if(!a.includes(sig)){a.push(sig);localStorage.setItem("reimb_seen",JSON.stringify(a.slice(-300)));}}catch(e){}}
+function pkgComplete(s){return s.items.length>0&&s.items.every(i=>i.decision);}
+function pkgSig(s){return s.id+":"+s.items.map(i=>i.decision||"-").join(",");}
+function pkgNeedsBadge(s){return pkgComplete(s)&&!seenStore().includes(pkgSig(s));}
+function openMinePkg(id){S.openMine=id;const s=S.mine.find(x=>x.id===id);if(s&&pkgComplete(s))markSeen(pkgSig(s));renderSubmit();}
+function closeMinePkg(){S.openMine=null;renderSubmit();}
+function mineListHTML(){
+  return `<p class="lead">Grouped by submission — tap one to see its charges.</p>
+  ${S.mine.map(s=>{const a=s.items.filter(i=>i.decision==="approved").length,r=s.items.filter(i=>i.decision==="returned").length,d=s.items.filter(i=>i.decision==="declined").length,p=s.items.filter(i=>!i.decision).length;const badge=pkgNeedsBadge(s);const status=p?`Pending — ${s.items.length-p}/${s.items.length} reviewed`:(r?`${r} sent back — needs you`:"Reviewed");const tone=p?"slate":(r?"amber":"green");const parts=[a?a+" approved":"",r?r+" sent back":"",d?d+" declined":"",p?p+" pending":""].filter(Boolean).join(" · ");return `<button class="pkgrow" onclick="openMinePkg('${s.id}')">
+    <div style="min-width:0"><div class="merch">${esc((s.at||"").slice(0,10))} · ${s.items.length} charge${s.items.length===1?"":"s"} · ${fmt(s.items.reduce((x,i)=>x+i.amount,0))}</div><div class="sub" style="margin-top:2px">${parts}</div></div>
+    <div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">${badge?'<span class="dot" title="Reviewed since you last looked"></span>':""}<span class="tag ${tone}">${status}</span><span class="chev">›</span></div></button>`;}).join("")}`;
+}
+function mineDetailHTML(){
+  const s=S.mine.find(x=>x.id===S.openMine); if(!s) return mineListHTML();
+  return `<div class="btnrow" style="margin-top:0"><button class="btn ghost sm" onclick="closeMinePkg()">← All submissions</button></div>
+  <div class="sub mono" style="margin:9px 0 6px">${esc((s.at||"").slice(0,16).replace("T"," "))} · ${s.items.length} charge${s.items.length===1?"":"s"} · ${fmt(s.items.reduce((x,i)=>x+i.amount,0))}</div>
+  ${s.items.map(it=>{const st=it.decision,fixN=(S.fix[it.txId]||[]).length;return `<div class="mine-row">
+    <div class="att-main"><div class="merch">${esc(it.merchant)}</div><div class="sub mono">${esc(it.date)}</div>
+      ${st==="returned"?`<div class="sub" style="color:var(--amber);margin-top:3px">Sent back: ${esc(it.reason||"")}</div>`:""}
+      ${st==="declined"?`<div class="sub" style="color:var(--red);margin-top:3px">Declined${it.reason?": "+esc(it.reason):""} — start a new request to retry.</div>`:""}</div>
+    <div class="att-amt amt">${fmt(it.amount)}</div>
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      ${st==="approved"?'<span class="tag green">approved</span>':st==="declined"?'<span class="tag red">declined</span>':st==="returned"?'<span class="tag amber">sent back</span>':'<span class="tag slate">pending</span>'}
+      ${st==="returned"?`<label class="rdrop" style="min-width:118px" ondragover="dz(event,1)" ondragleave="dz(event,0)" ondrop="dropFix(event,'${it.txId}')"><input type="file" accept="image/*,.heic,.heif,application/pdf" style="display:none" onchange="attachFix('${it.txId}',this.files[0])"><span class="rdrop-ic">⬇</span><span class="rdrop-t">${fixN?fixN+" new — add more":"New receipt"}</span></label><button class="btn teal sm" onclick="resend('${s.id}','${it.txId}')">Resend</button>`:""}
+    </div></div>`;}).join("")}`;
 }
 function dz(e,on){e.preventDefault();e.currentTarget.classList.toggle("drag",!!on);}
 function dropIntake(e){e.preventDefault();e.currentTarget.classList.remove("drag");const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length)intakeFiles(files);}
@@ -411,7 +440,13 @@ function renderReviewOne(){
     ${(sub.sources&&sub.sources.length)?`<div class="srcbar"><span class="srcbar-t">Originals from ${esc(sub.by)}:</span>${sub.sources.map((s,i)=>`<button class="srcchip" onclick="openSource('${sub.id}',${i})">${s.kind==="pdf"?"📄 "+esc(s.name||"statement.pdf"):"🖼 "+esc(s.name||("screenshot "+(i+1)))}</button>`).join("")}</div>`:`<div class="sub" style="margin:6px 0 4px;color:var(--slate)">No original statement/screenshot was saved with this submission.</div>`}
     ${paidHits.length?`<div class="notebar" style="border-left-color:var(--red)"><span>⚠</span><div><b>${paidHits.length} of these ${paidHits.length===1?"charge has":"charges have"} already been paid.</b> Blocked: ${paidHits.map(i=>esc(i.merchant)+" "+fmt(i.amount)+" (paid "+esc(byKey[dedupKey(i)].approvedAt)+")").join("; ")}.</div></div>`:""}
     ${nearHits.length?`<div class="notebar" style="border-left-color:var(--amber)"><span>⚠</span><div><b>${nearHits.length} charge${nearHits.length===1?"":"s"} look similar to something already paid</b> (same amount, near date, similar vendor — but a different reference). Not blocked; confirm each is a separate charge before approving.</div></div>`:""}
-    ${sub.items.map(it=>{const key=it.txId,ver=S.verifs[key]||it.verification,dec=it.decision,paid=byKey[dedupKey(it)],dup=!!paid,near=!dup?nearDupOf(it,S.ledger):null,twin=counts[sig(it)]>1;return `<div class="attach ${it.receipts.length?'ok':'missing'}" style="display:block">
+    ${(()=>{const items=sub.items.slice().sort(itemSort);const need=items.filter(i=>!i.decision),appr=items.filter(i=>i.decision==="approved"),sent=items.filter(i=>i.decision==="returned"),decl=items.filter(i=>i.decision==="declined");const sec=(title,arr,cls)=>arr.length?`<div class="rsec"><div class="rsec-h ${cls||''}">${title} <span class="rsec-n">${arr.length}</span></div>${arr.map(it=>reviewItemHTML(sub,it,byKey,counts)).join("")}</div>`:"";return sec("Needs your action",need,"need")+sec("Approved",appr,"appr")+sec("Sent back",sent,"sent")+sec("Declined",decl,"decl");})()}
+  </div>`;
+}
+function reviewItemHTML(sub,it,byKey,counts){
+  const key=it.txId,ver=S.verifs[key]||it.verification,dec=it.decision,paid=byKey[dedupKey(it)],dup=!!paid,near=!dup?nearDupOf(it,S.ledger):null;
+  const sig=i=>(i.merchant||"").toLowerCase().replace(/[^a-z0-9]/g,"")+"|"+Number(i.amount).toFixed(2);const twin=counts[sig(it)]>1;
+  return `<div class="attach ${it.receipts.length?'ok':'missing'}" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
         <div style="min-width:0"><div class="merch">${esc(it.merchant)} <span class="amt" style="font-weight:600">${fmt(it.amount)}</span></div>
           <div class="sub mono">${esc(it.date)}${it.ref?" · "+esc(it.ref):""}</div>${it.note?`<div class="sub" style="margin-top:4px">Note: ${esc(it.note)}</div>`:""}
@@ -420,8 +455,7 @@ function renderReviewOne(){
         <button class="btn ghost sm" onclick="checkOne('${sub.id}','${key}')" ${it.receipts.length?"":"disabled"}>${ver&&ver.__busy?"Checking…":"Check"}</button></div></div>
       ${ver&&!ver.__busy&&!ver.__err?verdictHtml(it,ver):""}${ver&&ver.__err?`<div class="notebar" style="border-left-color:var(--amber)"><span>!</span><div>${esc(ver.__err)}</div></div>`:""}
       ${dec?`<div class="btnrow"><span class="tag ${dec==="approved"?"green":dec==="returned"?"amber":"red"}">${dec==="returned"?"sent back":dec}</span>${it.reason?`<span class="sub" style="align-self:center">— ${esc(it.reason)}</span>`:""}</div>`:(S.decideUI.key===key?decidePanel(sub.id,key,ver):`<div class="btnrow"><button class="btn green sm" onclick="decide('${sub.id}','${key}','approved')" ${dup?"disabled":""}>Approve → ledger</button><button class="btn ghost sm" onclick="openDecide('${key}','returned')">Send back</button><button class="btn ghost sm" onclick="openDecide('${key}','declined')">Decline</button></div>`)}
-    </div>`;}).join("")}
-  </div>`;
+    </div>`;
 }
 function verdictHtml(it,v){const cls=v.verdict==="match"?"match":v.verdict==="flagged"?"flagged":"review";const label=v.verdict==="match"?"RECONCILED":v.verdict==="flagged"?"FLAGGED":"REVIEW";const mk=s=>s==="yes"?"✓":s==="no"?"✗":"?";const m=v.match||{};return `<div class="verdict"><div class="vtop ${cls}"><div style="font-size:13px;font-weight:600">${esc(v.merchant_on_receipt||"Receipt")} · ${v.receipt_total!=null?fmt(v.receipt_total):"total unread"}</div><div class="stamp ${cls}">${label}</div></div><div class="vbody"><div class="cmp"><div class="l"><div class="cmp-k">Charge</div><div class="cmp-v">${esc(it.merchant)}<br>${fmt(it.amount)} · ${esc(it.date)}</div></div><div><div class="cmp-k">Receipt</div><div class="cmp-v">${esc(v.merchant_on_receipt||"—")}<br>${v.receipt_total!=null?fmt(v.receipt_total):"—"} · ${esc(v.receipt_date||"—")}</div></div></div><div class="mono" style="font-size:12px;margin-bottom:${v.flagged_items&&v.flagged_items.length?'8px':'0'}">merchant ${mk(m.merchant)} &nbsp; amount ${mk(m.amount)} &nbsp; date ${mk(m.date)}</div>${(v.flagged_items||[]).map(f=>`<div class="flagline"><span class="tag red" style="flex:0 0 auto">${esc(f.category)}</span><span style="font-size:13px">${esc(f.item)}${f.amount!=null?" — "+fmt(f.amount):""}</span></div>`).join("")}${v.note?`<div class="sub" style="margin-top:8px">${esc(v.note)}</div>`:""}</div></div>`;}
 function openSource(subId,idx){const sub=S.inbox.find(s=>s.id===subId);if(!sub||!sub.sources)return;const s=sub.sources[idx];if(!s)return;const w=window.open("");if(!w)return;if(s.media==="application/pdf"){w.document.write(`<body style="margin:0"><embed src="data:application/pdf;base64,${s.data}" type="application/pdf" width="100%" height="100%"></body>`);}else{w.document.write(`<body style="margin:0;background:#111"><img src="data:${s.media};base64,${s.data}" style="max-width:100%"></body>`);}}
