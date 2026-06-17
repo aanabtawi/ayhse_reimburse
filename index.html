@@ -47,8 +47,11 @@ body{margin:0;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);
 .dot{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;flex:0 0 auto}
 .chev{color:var(--faint);font-size:18px;line-height:1}
 .rsec{margin-top:16px}
-.rsec-h{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--slate);padding:0 0 7px;border-bottom:2px solid var(--hair);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.rsec-h{width:100%;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--slate);background:none;padding:0 0 7px;border:none;border-bottom:2px solid var(--hair);cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px}
+.rsec-body{margin-top:10px}
+.rsec-cap{font-size:11px;color:var(--faint)}
 .rsec-h.need{color:var(--teal);border-bottom-color:var(--teal)}
+.rsec-h.need .rsec-cap{color:var(--teal)}
 .rsec-h.appr{color:var(--green)}
 .rsec-h.sent{color:var(--amber)}
 .rsec-h.decl{color:var(--red)}
@@ -139,7 +142,7 @@ const DEFAULT_POLICY = ["Alcohol","Tobacco / vape","Gift cards","Cash back / ATM
 const S = {
   user:null, isReviewer:false, role:"submit", intakeMsg:"",
   txs:[], claimed:{}, receipts:{}, submitterName:"", sources:[],
-  inbox:[], openSub:null, verifs:{}, decideUI:{key:null,mode:null,text:""},
+  inbox:[], openSub:null, verifs:{}, decideUI:{key:null,mode:null,text:""}, rsec:{need:true,appr:false,sent:false,decl:false},
   mine:[], fix:{}, openMine:null,
   ledger:[], paid:[], policy:[...DEFAULT_POLICY]
 };
@@ -440,9 +443,10 @@ function renderReviewOne(){
     ${(sub.sources&&sub.sources.length)?`<div class="srcbar"><span class="srcbar-t">Originals from ${esc(sub.by)}:</span>${sub.sources.map((s,i)=>`<button class="srcchip" onclick="openSource('${sub.id}',${i})">${s.kind==="pdf"?"📄 "+esc(s.name||"statement.pdf"):"🖼 "+esc(s.name||("screenshot "+(i+1)))}</button>`).join("")}</div>`:`<div class="sub" style="margin:6px 0 4px;color:var(--slate)">No original statement/screenshot was saved with this submission.</div>`}
     ${paidHits.length?`<div class="notebar" style="border-left-color:var(--red)"><span>⚠</span><div><b>${paidHits.length} of these ${paidHits.length===1?"charge has":"charges have"} already been paid.</b> Blocked: ${paidHits.map(i=>esc(i.merchant)+" "+fmt(i.amount)+" (paid "+esc(byKey[dedupKey(i)].approvedAt)+")").join("; ")}.</div></div>`:""}
     ${nearHits.length?`<div class="notebar" style="border-left-color:var(--amber)"><span>⚠</span><div><b>${nearHits.length} charge${nearHits.length===1?"":"s"} look similar to something already paid</b> (same amount, near date, similar vendor — but a different reference). Not blocked; confirm each is a separate charge before approving.</div></div>`:""}
-    ${(()=>{const items=sub.items.slice().sort(itemSort);const need=items.filter(i=>!i.decision),appr=items.filter(i=>i.decision==="approved"),sent=items.filter(i=>i.decision==="returned"),decl=items.filter(i=>i.decision==="declined");const sec=(title,arr,cls)=>arr.length?`<div class="rsec"><div class="rsec-h ${cls||''}">${title} <span class="rsec-n">${arr.length}</span></div>${arr.map(it=>reviewItemHTML(sub,it,byKey,counts)).join("")}</div>`:"";return sec("Needs your action",need,"need")+sec("Approved",appr,"appr")+sec("Sent back",sent,"sent")+sec("Declined",decl,"decl");})()}
+    ${(()=>{const items=sub.items.slice().sort(itemSort);const need=items.filter(i=>!i.decision),appr=items.filter(i=>i.decision==="approved"),sent=items.filter(i=>i.decision==="returned"),decl=items.filter(i=>i.decision==="declined");const sec=(title,arr,cls)=>{if(!arr.length)return"";const open=S.rsec[cls];return `<div class="rsec"><button class="rsec-h ${cls}" onclick="toggleRsec('${cls}')"><span class="rsec-cap">${open?"▾":"▸"}</span>${title} <span class="rsec-n">${arr.length}</span></button>${open?`<div class="rsec-body">${arr.map(it=>reviewItemHTML(sub,it,byKey,counts)).join("")}</div>`:""}</div>`;};return sec("Needs your action",need,"need")+sec("Approved",appr,"appr")+sec("Sent back",sent,"sent")+sec("Declined",decl,"decl");})()}
   </div>`;
 }
+function toggleRsec(k){S.rsec[k]=!S.rsec[k];renderReviewOne();}
 function reviewItemHTML(sub,it,byKey,counts){
   const key=it.txId,ver=S.verifs[key]||it.verification,dec=it.decision,paid=byKey[dedupKey(it)],dup=!!paid,near=!dup?nearDupOf(it,S.ledger):null;
   const sig=i=>(i.merchant||"").toLowerCase().replace(/[^a-z0-9]/g,"")+"|"+Number(i.amount).toFixed(2);const twin=counts[sig(it)]>1;
